@@ -63,8 +63,27 @@ def create_dataset():
     print("\nDataset split into train, test, and validation sets:")
     print(dataset_dict)
 
+    # Upload to Hugging Face Hub
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token:
+        print("\nHugging Face token found. Uploading dataset to the Hub...")
+        repo_name = "nebari-issue-label-dataset"
+        dataset_dict.push_to_hub(repo_name, private=True, token=hf_token)
+        print(f"Dataset successfully uploaded to the Hugging Face Hub as '{repo_name}'.")
+    else:
+        print("\nHF_TOKEN environment variable not set. Skipping upload to Hugging Face Hub.")
+        print("To upload, set the HF_TOKEN environment variable with your Hugging Face API token.")
+
     # Optional: Save the dataset to disk
     dataset_dict.save_to_disk("scripts/data/export/nebari-issue-label-dataset")
 
 if __name__ == "__main__":
+    # Ensure the necessary libraries are installed
+    try:
+        import datasets
+        import huggingface_hub
+    except ImportError as e:
+        print(f"A required library is not installed: {e.name}")
+        print("Please ensure both 'datasets' and 'huggingface-hub' are listed in your pixi.toml and installed.")
+        exit(1)
     create_dataset()
