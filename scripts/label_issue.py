@@ -115,55 +115,81 @@ def build_openai_prompt(title: str, body: str, allowed: List[str]) -> str:
 
 def call_openai(api_key: str, model: str, prompt: str, timeout_secs: int) -> str:
     """
-    Calls OpenAI responses endpoint to get a JSON-only reply.
-    Using the 'responses' API is recommended; fallback to chat if needed.
+    Calls OpenAI Responses API for JSON output using the updated parameter:
+    - text.format = "json_object"
+    Falls back to Chat Completions if needed.
     """
-    url = "https://api.openai.com/v1/responses"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    data = {
+ 
+    # First try Responses API
+    url_resp = "https://api.openai.com/v1/responses"
+    data_resp = {
         "model": model,
         "input": prompt,
         "max_output_tokens": 400,
         "temperature": 0.2,
-        # Encourage JSON only
-        "response_format": {"type": "json_object"},
+        "text": {"format": "json_object"},  # updated placement of response_format
     }
     try:
-        resp = requests.post(url, headers=headers, json=data, timeout=timeout_secs)
+        resp = requests.post(url_resp, headers=headers, json=data_resp, timeout=timeout_secs)
+        if resp.status_code == 429:
+            time.sleep(2)
+            resp = requests.post(url_resp, headers=headers, json=data_resp, timeout=timeout_secs)
+        if resp.status_code // 100 == 2:
+            out = resp.json()
+            if "output_text" in out and isinstance(out["output_text"], str):
+                return out["output_text"]
+            try:
+                parts = out.get("output", [])
+                if parts and isinstance(parts, list):
+                    content = parts[0].get("content", [])
+                    for c in content:
+                        if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
+                            text_val = c.get("text")
+                            if isinstance(text_val, str):
+                                return text_val
+            except Exception:
+                pass
+            return json.dumps(out)
+        else:
+            # If Responses API is not supported for the model, fall back to chat
+            log(f"Responses API not successful (HTTP {resp.status_code}); falling back to Chat Completions.")
     except requests.RequestException as e:
-        raise RuntimeError(f"OpenAI request error: {e}")
-
-    if resp.status_code == 429:
-        # simple backoff and single retry
-        time.sleep(2)
-        resp = requests.post(url, headers=headers, json=data, timeout=timeout_secs)
-
-    if resp.status_code // 100 != 2:
-        raise RuntimeError(f"OpenAI HTTP {resp.status_code}: {resp.text}")
-
-    out = resp.json()
-    # Responses API returns content as array of outputs; extract text
-    # Format: { "output": [{"content":[{"type":"output_text","text":"..."}]}], ... } OR
-    # newer: { "output_text": "{...json...}" }
-    if "output_text" in out and isinstance(out["output_text"], str):
-        return out["output_text"]
-    # fallback parse
+        log(f"Responses API error: {e}; falling back to Chat Completions.")
+ 
+    # Fallback: Chat Completions with JSON mode
+    url_chat = "https://api.openai.com/v1/chat/completions"
+    sys_prompt = (
+        "You are an assistant that assigns GitHub issue labels. "
+        "Return ONLY a compact JSON object with this schema: "
+        '{ "labels": [{"name": "<one of allowed>", "confidence": 0.0}], '
+        '"rationale": "short explanation", "version": "v1" }. '
+        "No extra text."
+    )
+    data_chat = {
+        "model": model,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": prompt},
+        ],
+    }
     try:
-        parts = out.get("output", [])
-        if parts and isinstance(parts, list):
-            content = parts[0].get("content", [])
-            for c in content:
-                if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
-                    text_val = c.get("text")
-                    if isinstance(text_val, str):
-                        return text_val
-    except Exception:
-        pass
-    # As last resort, return entire string
-    return json.dumps(out)
+        resp2 = requests.post(url_chat, headers=headers, json=data_chat, timeout=timeout_secs)
+        if resp2.status_code == 429:
+            time.sleep(2)
+            resp2 = requests.post(url_chat, headers=headers, json=data_chat, timeout=timeout_secs)
+        if resp2.status_code // 100 != 2:
+            raise RuntimeError(f"OpenAI HTTP {resp2.status_code}: {resp2.text}")
+        out2 = resp2.json()
+        text = out2["choices"][0]["message"]["content"]
+        return text
+    except requests.RequestException as e:
+        raise RuntimeError(f"OpenAI request error (chat fallback): {e}")
 
 def validate_llm_json(s: str) -> Dict[str, Any]:
     try:
