@@ -11,6 +11,7 @@ openai = "*"
 awkward = "*"
 requests = "*"
 pyyaml = "*"
+datasets = "*"
 
 [tasks]
 # Run arbitrary python scripts inside the pixi environment:
