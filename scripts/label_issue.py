@@ -101,37 +101,35 @@ def add_labels(owner: str, repo: str, issue_number: int, labels: List[str], toke
 def build_openai_prompt(title: str, body: str, allowed: List[str]) -> str:
     return (
         "You are an assistant that assigns GitHub issue labels.\n"
-        "Return ONLY a compact JSON object with this schema:\n"
-        '{ "labels": [{"name": "<one of allowed>", "confidence": 0.0}],'
-        ' "rationale": "short explanation", "version": "v1" }\n'
+        "Return ONLY a single line of comma-separated labels from the allowed set.\n"
+        "Format example:\n"
+        "bug, enhancement, documentation\n"
         "Rules:\n"
         f"- Allowed labels: {', '.join(allowed)}\n"
-        "- Choose up to 3 labels. Use confidences between 0 and 1.\n"
-        "- If unsure, return an empty labels array and brief rationale.\n"
-        "- Do not include any extra text outside the JSON.\n\n"
+        "- Choose any number of labels from the allowed set (including zero).\n"
+        "- If unsure, return an empty line.\n"
+        "- Do not include any extra text, code fences, or explanations. Only the CSV line.\n\n"
         f"Issue title: {title}\n"
         f"Issue body:\n{body}\n"
     )
 
 def call_openai(api_key: str, model: str, prompt: str, timeout_secs: int) -> str:
     """
-    Calls OpenAI Responses API for JSON output using the updated parameter:
-    - text.format = "json_object"
-    Falls back to Chat Completions if needed.
+    Calls OpenAI to get plain text output (CSV string of labels only).
+    Tries Responses API first, then Chat Completions.
     """
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
- 
-    # First try Responses API
+
+    # Try Responses API for plain text
     url_resp = "https://api.openai.com/v1/responses"
     data_resp = {
         "model": model,
         "input": prompt,
         "max_output_tokens": 400,
         "temperature": 0.2,
-        "text": {"format": "json_object"},  # updated placement of response_format
     }
     try:
         resp = requests.post(url_resp, headers=headers, json=data_resp, timeout=timeout_secs)
@@ -140,39 +138,37 @@ def call_openai(api_key: str, model: str, prompt: str, timeout_secs: int) -> str
             resp = requests.post(url_resp, headers=headers, json=data_resp, timeout=timeout_secs)
         if resp.status_code // 100 == 2:
             out = resp.json()
-            if "output_text" in out and isinstance(out["output_text"], str):
-                return out["output_text"]
-            try:
-                parts = out.get("output", [])
-                if parts and isinstance(parts, list):
-                    content = parts[0].get("content", [])
-                    for c in content:
-                        if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
-                            text_val = c.get("text")
-                            if isinstance(text_val, str):
-                                return text_val
-            except Exception:
-                pass
+            # Try to extract text in a variety of shapes
+            if isinstance(out, dict):
+                if "output_text" in out and isinstance(out["output_text"], str):
+                    return out["output_text"]
+                try:
+                    parts = out.get("output", [])
+                    if parts and isinstance(parts, list):
+                        content = parts[0].get("content", [])
+                        for c in content:
+                            if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
+                                text_val = c.get("text")
+                                if isinstance(text_val, str):
+                                    return text_val
+                except Exception:
+                    pass
+            # As a last resort, return stringified JSON
             return json.dumps(out)
         else:
-            # If Responses API is not supported for the model, fall back to chat
             log(f"Responses API not successful (HTTP {resp.status_code}); falling back to Chat Completions.")
     except requests.RequestException as e:
         log(f"Responses API error: {e}; falling back to Chat Completions.")
- 
-    # Fallback: Chat Completions with JSON mode
+
+    # Fallback: Chat Completions expecting plain text CSV of labels
     url_chat = "https://api.openai.com/v1/chat/completions"
     sys_prompt = (
         "You are an assistant that assigns GitHub issue labels. "
-        "Return ONLY a compact JSON object with this schema: "
-        '{ "labels": [{"name": "<one of allowed>", "confidence": 0.0}], '
-        '"rationale": "short explanation", "version": "v1" }. '
-        "No extra text."
+        "Return ONLY a single line, CSV of labels from the allowed set, no explanations."
     )
     data_chat = {
         "model": model,
         "temperature": 0.2,
-        "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": prompt},
@@ -191,41 +187,39 @@ def call_openai(api_key: str, model: str, prompt: str, timeout_secs: int) -> str
     except requests.RequestException as e:
         raise RuntimeError(f"OpenAI request error (chat fallback): {e}")
 
-def validate_llm_json(s: str) -> Dict[str, Any]:
-    try:
-        obj = json.loads(s)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"LLM did not return valid JSON: {e}")
+def parse_llm_labels_csv(s: str) -> List[str]:
+    """
+    Parse CSV returned by the LLM in the form:
+    "bug, enhancement, documentation"
+    - Ignores extra spaces and newlines
+    - Accepts empty string (meaning no labels)
+    - Returns a list of label names in order
+    """
+    if not isinstance(s, str):
+        s = str(s)
+    text = s.strip()
+    if not text:
+        return []
 
-    labels = obj.get("labels", [])
-    rationale = obj.get("rationale", "")
-    version = obj.get("version", VERSION)
+    # Strip common wrappers (code fences or quotes)
+    if text.startswith("```") and text.endswith("```"):
+        inner = text.strip("`")
+        first_newline = inner.find("\n")
+        if first_newline != -1:
+            text = inner[first_newline + 1 :].strip()
+        else:
+            text = inner.strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
 
-    if not isinstance(labels, list):
-        raise RuntimeError("Invalid schema: 'labels' must be a list")
-    norm_labels = []
-    for item in labels:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name")
-        conf = item.get("confidence")
-        if not isinstance(name, str):
-            continue
-        try:
-            conf_f = float(conf)
-        except Exception:
-            conf_f = 0.0
-        norm_labels.append({"name": name.strip(), "confidence": max(0.0, min(1.0, conf_f))})
+    items = [p.strip() for p in text.replace("\n", " ").split(",")]
+    labels = [i for i in items if i]
+    return labels
 
-    return {"labels": norm_labels, "rationale": str(rationale), "version": str(version)}
-
-def select_labels(candidates: List[Dict[str, Any]], allowed: List[str], min_conf: float, max_labels: int) -> Tuple[List[str], List[Dict[str, Any]]]:
-    filtered = [c for c in candidates if (c["name"] in allowed and c["confidence"] >= min_conf)]
-    # sort by confidence desc
-    filtered.sort(key=lambda x: x["confidence"], reverse=True)
-    top = filtered[: max(0, max_labels)]
-    chosen = [x["name"] for x in top]
-    return chosen, filtered
+def select_labels_from_list(candidates: List[str], allowed: List[str]) -> List[str]:
+    # Keep original order as produced by the model; filter against allowed; no cap
+    filtered = [name for name in candidates if name in allowed]
+    return filtered
 
 def main() -> int:
     try:
@@ -252,8 +246,6 @@ def main() -> int:
 
         # Config
         dry_run = parse_bool(os.environ.get("LABELER_DRY_RUN", "true"))
-        min_conf = safe_float(os.environ.get("LABELER_MIN_CONF", "0.6"), 0.6)
-        max_labels = safe_int(os.environ.get("LABELER_MAX_LABELS", "3"), 3)
         model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         timeout_secs = safe_int(os.environ.get("OPENAI_TIMEOUT_SECS", "20"), 20)
         openai_key = get_env("OPENAI_API_KEY")  # required
@@ -261,31 +253,26 @@ def main() -> int:
         # Build prompt and call OpenAI
         prompt = build_openai_prompt(title, body, ALLOWED_LABELS)
         log("Calling OpenAI for label recommendations...")
-        raw_json_text = call_openai(openai_key, model, prompt, timeout_secs)
-        parsed = validate_llm_json(raw_json_text)
-        recs = parsed["labels"]
-        chosen, filtered = select_labels(recs, ALLOWED_LABELS, min_conf, max_labels)
+        raw_text = call_openai(openai_key, model, prompt, timeout_secs)
+        label_list = parse_llm_labels_csv(raw_text)
+        chosen = select_labels_from_list(label_list, ALLOWED_LABELS)
 
-        log(f"LLM raw parsed: {parsed}")
-        log(f"Chosen labels (after filtering): {chosen}")
+        log(f"LLM raw parsed labels: {label_list}")
+        log(f"Chosen labels (filtered): {chosen}")
 
         # Comment or apply
         if dry_run or not chosen:
-            # Prepare a readable summary
             lines = [
                 f"Labeler ({VERSION}) recommendations:",
                 "",
             ]
-            if filtered:
-                for item in filtered[:max_labels]:
-                    lines.append(f"- {item['name']}: {item['confidence']:.2f}")
+            if chosen:
+                for name in chosen:
+                    lines.append(f"- {name}")
             else:
-                lines.append("- No confident labels (abstain)")
-            if parsed.get("rationale"):
-                lines.append("")
-                lines.append(f"Rationale: {parsed['rationale']}")
+                lines.append("- No labels recommended (abstain)")
             lines.append("")
-            lines.append(f"Mode: {'dry-run' if dry_run else 'apply'} • Threshold: {min_conf} • Cap: {max_labels}")
+            lines.append(f"Mode: {'dry-run' if dry_run else 'apply'}")
             body_text = "\n".join(lines)
             post_issue_comment(owner, repo, int(issue_number), body_text, token)
         else:

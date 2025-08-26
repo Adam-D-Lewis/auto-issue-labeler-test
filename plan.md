@@ -3,7 +3,7 @@
 
 Overall Progress
 - [x] Phase 0 — Baseline and Validation
-- [ ] Phase 1 — Wire Action to Anthropic API (LLM in the loop)
+- [ ] Phase 1 — Wire Action to OpenAI API (LLM in the loop)
 - [ ] Phase 2 — Label Set Definition and Governance
 - [ ] Phase 3 — Dataset Creation for Fine-tuning
 - [ ] Phase 4 — Training and Evaluation
@@ -13,7 +13,7 @@ Overall Progress
 
 # Auto Issue Labeler: End-to-End Plan
 
-This plan describes the steps to implement an automated issue labeling system that starts with a GitHub Action calling an LLM (Anthropic) and evolves toward a fine-tuned model hosted behind a stable inference API.
+This plan describes the steps to implement an automated issue labeling system that starts with a GitHub Action calling an LLM (OpenAI) and evolves toward a fine-tuned model hosted behind a stable inference API.
 
 References (for current repo):
 - Existing workflow: [`.github/workflows/issue-labeler.yml`](.github/workflows/issue-labeler.yml)
@@ -43,7 +43,7 @@ Deliverables:
 
 --------------------------------------------------------------------------------
 
-Phase 1 — Wire Action to Anthropic API (LLM in the loop)
+Phase 1 — Wire Action to OpenAI API (LLM in the loop)
 Goal: Replace placeholder labeling with an LLM recommendation flow.
 
 Design:
@@ -51,16 +51,15 @@ Design:
 - Output schema (JSON):
   {
     "labels": [{"name": "bug", "confidence": 0.87}, ...],
-    "rationale": "short explanation",
     "version": "v1"
   }
 - Safety: Timeouts, retries, and abstention if low confidence.
 
 Steps:
-- Add secret ANTHROPIC_API_KEY in repo settings
+- Add secret OPENAI_API_KEY in repo settings
 - Extend [`python.def main()`](scripts/label_issue.py:121) flow:
   - Build prompt
-  - Call Anthropic API (Claude 3.5 Sonnet recommended)
+  - Call OpenAI API (gpt-4o recommended)
   - Parse/validate JSON response
   - Map to allowed labels; apply above threshold
 - Add dry-run mode (env LABELER_DRY_RUN=true) that posts a comment recommending labels instead of applying
@@ -73,8 +72,8 @@ Acceptance criteria:
 - Errors fail the job with clear logs but do not spam API
 
 Deliverables:
-- Updated workflow to include ANTHROPIC_API_KEY
-- Updated script with Anthropic client call and JSON schema validation
+- Updated workflow to include OPENAI_API_KEY
+- Updated script with OpenAI client call and JSON schema validation
 
 --------------------------------------------------------------------------------
 
@@ -181,14 +180,14 @@ Phase 5 — Hosting and Inference API
 Goal: Provide a stable inference endpoint.
 
 Options:
-- Continue vendor LLM (Anthropic): zero hosting; call directly in action
+- Continue vendor LLM (OpenAI): zero hosting; call directly in action
 - Host fine-tuned open model:
   - Hugging Face Inference Endpoints / Replicate (managed)
   - Self-host with vLLM or TGI behind a small FastAPI
 - API contract:
   - POST /predict
     - Input: {title, body, allowed_labels, top_k, thresholds}
-    - Output: {labels: [{name, confidence}], rationale, version}
+    - Output: {labels: [{name, confidence}], version}
 
 Steps:
 - Package model server
@@ -246,7 +245,7 @@ Docs:
 
 Acceptance criteria:
 - A new contributor can run end-to-end (dry-run) in under an hour
-- Clear upgrade path from Anthropic-only to hosted model
+- Clear upgrade path from OpenAI-only to hosted model
 
 Deliverables:
 - README updates
@@ -256,12 +255,12 @@ Deliverables:
 --------------------------------------------------------------------------------
 
 Immediate Next Actions (for this repo)
-1) Phase 1 - Anthropic wiring (LLM call)
-- Add secret ANTHROPIC_API_KEY
-- Update workflow to pass ANTHROPIC_API_KEY to the job
+1) Phase 1 - OpenAI wiring (LLM call)
+- Add secret OPENAI_API_KEY
+- Update workflow to pass OPENAI_API_KEY to the job
 - Extend [`python.def main()`](scripts/label_issue.py:121) to:
   - Build prompt from issue title/body and allowed labels (temporary hardcoded set: bug, enhancement, documentation)
-  - Call Anthropic API with timeout
+  - Call OpenAI API with timeout
   - Parse labels, filter against allowed set, threshold at 0.6, cap 3
   - Dry-run initial (comment recommendations)
 
