@@ -1,0 +1,23 @@
+[project]
+name = "auto-issue-labeler-test"
+version = "0.1.0"
+description = "Pixi-managed Python environment for this repo"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.13.*"
+openai = "*"
+awkward = "*"
+requests = "*"
+pyyaml = "*"
+
+[tasks]
+# Run arbitrary python scripts inside the pixi environment:
+# usage:
+#   pixi run py scripts/label_issue.py --arg ...
+py = "python"
+
+# Convenience tasks for existing scripts
+fetch-issues = "bash scripts/fetch_github_issues.sh"
+label-issue = "python scripts/label_issue.py"

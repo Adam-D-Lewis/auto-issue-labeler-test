@@ -1,0 +1,48 @@
+- name: bug
+  description: A reported error or unexpected behavior in the software.
+  color: d73a4a
+- name: enhancement
+  description: A request for a new feature or an improvement to an existing one.
+  color: a2eeef
+- name: documentation
+  description: Issues related to improving or expanding the documentation.
+  color: 0075ca
+- name: question
+  description: A user question that requires clarification or guidance.
+  color: d876e3
+- name: maintenance
+  description: Routine tasks, refactoring, and dependency updates.
+  color: f9d0c4
+- name: ci/cd
+  description: Issues related to continuous integration and deployment pipelines.
+  color: 0e8a16
+- name: testing
+  description: Tasks related to creating or improving tests.
+  color: cfd3d7
+- name: release
+  description: Tasks and checklists related to software releases.
+  color: fbca04
+- name: aws
+  description: Issues specific to Amazon Web Services (AWS) deployments.
+  color: FF9900
+- name: gcp
+  description: Issues specific to Google Cloud Platform (GCP) deployments.
+  color: 4285F4
+- name: azure
+  description: Issues specific to Microsoft Azure deployments.
+  color: 0089D6
+- name: security
+  description: Issues related to security vulnerabilities or concerns.
+  color: e99695
+- name: performance
+  description: Issues related to performance, cost, or resource optimization.
+  color: b60205
+- name: ux/ui
+  description: Issues related to user experience and user interface design.
+  color: 5319e7
+- name: configuration
+  description: Issues related to setup, configuration, or deployment settings.
+  color: bfdadc
+- name: dependency-update
+  description: Tasks related to updating third-party dependencies.
+  color: 84B6EB
