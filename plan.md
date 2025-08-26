@@ -44,36 +44,37 @@ Deliverables:
 --------------------------------------------------------------------------------
 
 Phase 1 — Wire Action to OpenAI API (LLM in the loop)
-Goal: Replace placeholder labeling with an LLM recommendation flow.
+Goal: Replace placeholder labeling with an LLM recommendation flow using simple CSV output (no confidences).
 
 Design:
-- Prompt: Provide issue title, body, optional repo context, and the allowed label set; ask for JSON output with labels and confidences.
-- Output schema (JSON):
-  {
-    "labels": [{"name": "bug", "confidence": 0.87}, ...],
-    "version": "v1"
-  }
-- Safety: Timeouts, retries, and abstention if low confidence.
+- Prompt: Provide issue title, body, and the allowed label set; require a single line of comma-separated labels (CSV) from the allowed set with no extra text.
+- Output format: plain text CSV (e.g., "bug, enhancement, documentation") or empty line to abstain.
+- Safety: HTTP timeouts and single retry for 429s; abstain if model returns nothing or only disallowed labels.
 
 Steps:
 - Add secret OPENAI_API_KEY in repo settings
-- Extend [`python.def main()`](scripts/label_issue.py:121) flow:
-  - Build prompt
-  - Call OpenAI API (gpt-4o recommended)
-  - Parse/validate JSON response
-  - Map to allowed labels; apply above threshold
-- Add dry-run mode (env LABELER_DRY_RUN=true) that posts a comment recommending labels instead of applying
-- Add threshold envs: LABELER_MIN_CONF=0.6; LABELER_MAX_LABELS=3
-- Support actions for "opened" and optionally "edited" to re-evaluate labels
-- Rate-limit handling: single retry with backoff; log and gracefully exit on persistent failure
+- Extend [`python.def main()`](scripts/label_issue.py:224) flow:
+  - Build strict prompt to return CSV only via [`python.def build_openai_prompt()`](scripts/label_issue.py:101)
+  - Call OpenAI (Responses API with fallback to Chat Completions) via [`python.def call_openai()`](scripts/label_issue.py:116)
+  - Parse CSV into labels via [`python.def parse_llm_labels_csv()`](scripts/label_issue.py:190)
+  - Filter against allowed labels with no confidence thresholds or caps via [`python.def select_labels_from_list()`](scripts/label_issue.py:219)
+- Add dry-run mode (env LABELER_DRY_RUN=true) that posts a comment listing recommended labels (no confidences) instead of applying
+- Support actions for "opened" and "edited" to re-evaluate labels
+- Rate-limit handling: single retry/backoff for 429; log and gracefully exit on persistent failure
+
+Environment/config used in code now:
+- OPENAI_MODEL (default "gpt-4o-mini")
+- OPENAI_TIMEOUT_SECS (default "20")
+- LABELER_DRY_RUN ("true"/"false")
+- Allowed labels currently hardcoded as ["bug", "enhancement", "documentation"] in [`python.def ALLOWED_LABELS`](scripts/label_issue.py:26)
 
 Acceptance criteria:
-- For diverse test issues, action posts recommended labels with confidences in dry-run, and applies labels when dry-run disabled if confidences exceed threshold
-- Errors fail the job with clear logs but do not spam API
+- For diverse test issues, action posts recommended labels (CSV parsed, no confidences) in dry-run, and applies labels when dry-run is disabled
+- Errors fail the job with clear logs and do not spam the API
 
 Deliverables:
 - Updated workflow to include OPENAI_API_KEY
-- Updated script with OpenAI client call and JSON schema validation
+- Updated script with OpenAI client call and CSV parsing/validation (no JSON schema, no confidence thresholds)
 
 --------------------------------------------------------------------------------
 
