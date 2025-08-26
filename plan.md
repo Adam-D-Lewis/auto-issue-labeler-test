@@ -3,7 +3,7 @@
 
 Overall Progress
 - [x] Phase 0 — Baseline and Validation
-- [ ] Phase 1 — Wire Action to OpenAI API (LLM in the loop)
+- [x] Phase 1 — Wire Action to OpenAI API (LLM in the loop)
 - [ ] Phase 2 — Label Set Definition and Governance
 - [ ] Phase 3 — Dataset Creation for Fine-tuning
 - [ ] Phase 4 — Training and Evaluation
@@ -18,7 +18,7 @@ This plan describes the steps to implement an automated issue labeling system th
 References (for current repo):
 - Existing workflow: [`.github/workflows/issue-labeler.yml`](.github/workflows/issue-labeler.yml)
 - Current labeling script: [`python.def main()`](scripts/label_issue.py:121)
-
+ 
 Guiding principles:
 - Ship in small increments; each phase has testable deliverables.
 - Maintain reproducibility and traceability of prompts, datasets, and models.
