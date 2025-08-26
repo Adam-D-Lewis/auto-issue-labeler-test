@@ -13,9 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Default knobs for Phase 1 (can be overridden at workflow_dispatch or env)
-      LABELER_DRY_RUN: "true"
-      LABELER_MIN_CONF: "0.6"
-      LABELER_MAX_LABELS: "3"
+      LABELER_DRY_RUN: "false"
       OPENAI_MODEL: "gpt-4o-mini"
       OPENAI_TIMEOUT_SECS: "20"
     steps:
@@ -39,8 +37,6 @@ jobs:
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LABELER_DRY_RUN: ${{ env.LABELER_DRY_RUN }}
-          LABELER_MIN_CONF: ${{ env.LABELER_MIN_CONF }}
-          LABELER_MAX_LABELS: ${{ env.LABELER_MAX_LABELS }}
           OPENAI_MODEL: ${{ env.OPENAI_MODEL }}
           OPENAI_TIMEOUT_SECS: ${{ env.OPENAI_TIMEOUT_SECS }}
         run: |

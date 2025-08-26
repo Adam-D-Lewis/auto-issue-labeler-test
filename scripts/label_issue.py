@@ -245,7 +245,7 @@ def main() -> int:
             return 0
 
         # Config
-        dry_run = parse_bool(os.environ.get("LABELER_DRY_RUN", "true"))
+        dry_run = parse_bool(os.environ.get("LABELER_DRY_RUN", "false"))
         model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         timeout_secs = safe_int(os.environ.get("OPENAI_TIMEOUT_SECS", "20"), 20)
         openai_key = get_env("OPENAI_API_KEY")  # required
