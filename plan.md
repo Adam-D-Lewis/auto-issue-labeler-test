@@ -5,7 +5,7 @@ Overall Progress
 - [x] Phase 0 — Baseline and Validation
 - [x] Phase 1 — Wire Action to OpenAI API (LLM in the loop)
 - [x] Phase 2 — Label Set Definition and Governance
-- [ ] Phase 3 — Dataset Creation for Fine-tuning
+- [x] Phase 3 — Dataset Creation for Fine-tuning
 - [ ] Phase 4 — Training and Evaluation
 - [ ] Phase 5 — Hosting and Inference API
 - [ ] Phase 6 — Productionization and Safeguards
