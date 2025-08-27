@@ -119,7 +119,7 @@ Steps:
   - Manual triage sessions to label 200–1,000 examples
   - LLM-assisted bootstrapping with human verification to scale
 - Annotation protocol:
-  - Multi-label allowed; cap at 3 labels per issue
+  - Multi-label allowed
   - Clear decision guide; favor abstain/other over incorrect labels
 - Quality control:
   - Inter-annotator agreement (Cohen’s kappa)
