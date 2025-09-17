@@ -35,6 +35,9 @@ create-dataset = "python scripts/create_dataset.py"
 [feature.finetune.dependencies]
 python = "3.12.*"  # Override the default Python version
 gxx_linux-64 = "*"
+sysroot_linux-64 = "==2.34"
+kernel-headers_linux-64 = "==5.14.0"
+
 pip = "*"
 
 [feature.finetune.pypi-dependencies]

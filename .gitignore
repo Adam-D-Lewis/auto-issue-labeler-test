@@ -60,3 +60,9 @@ _test_deploy
 
 # ignore downloaded helm charts
 **/template/charts
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+unsloth_compiled_cache/
+checkpoint-*/
+*.safetensors
