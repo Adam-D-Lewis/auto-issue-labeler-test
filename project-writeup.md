@@ -40,7 +40,7 @@ This is essentially a multi-class sequence classification problem as proposed he
 
 
 # 1. Generate Synthetic Dataset
-For this example I chose to scrape the github issues on an open source data science platform called Nebari. I scraped 1567 issues. While many of those issues did have labels, the labeling system had evolved over time so I decided to use a large LLM create a synthetic dataset.  The "true" labels are somewhat subjective, and if this were more than just a learning exercise, I might consider using 3-4 large models to label each example and only keep labels with majority model consensus. I could also include human review of examples with low consensus.  
+For this example I chose to scrape the github issues on an open source data science platform called Nebari. I scraped 1567 issues. I chose Nebari simply because it was a repository I was familiar with, and it had a decent volume of issues to work with. While many of those issues did have labels, the labeling system had evolved over time so I decided to use a large LLM create a synthetic dataset.  The "true" labels are somewhat subjective, and if this were more than just a learning exercise, I might consider using 3-4 large models to label each example and only keep labels with majority model consensus. I could also include human review of examples with low consensus.  
 
 Alternatively, I could use active learning if data generation cost were prohibitive. Instead of randomly selecting 1,567 issues to label with Gemini Pro, active learning would:
 
@@ -51,7 +51,7 @@ Alternatively, I could use active learning if data generation cost were prohibit
   5. Get Gemini labels for just those 50
   6. Retrain and repeat
 
-As it is a learning exercise, I ended up using gemini-2.5-pro exclusively to label the entire 1567 issues to generate the training dataset.  I didn't document costs strictly, but I think costs were around ~$25 when using gemini-2.5-pro.
+As it is a learning exercise, I ended up using gemini-2.5-pro exclusively to label the entire 1567 issues to generate the training dataset. The overall cost to label this dataset was around $25 - not insignificant when you consider that tiny per-evaluation costs really add up when run thousands of times!
 
 I used the following prompt to fine tune the LLM.
 
@@ -87,16 +87,18 @@ Issue body:
 \<body\>
 ```
 
-While this seems straight forward, this probably took the largest amount of time out of all the steps. It definitely seems worth it to search [huggingface datasets](https://huggingface.co/docs/datasets/index) before creating your own. The overall cost to label this dataset was ~$25.  Tiny per evaluation costs add up when run thousands of times! 
+While this seems straight forward, this probably took the largest amount of time out of all the steps. It definitely seems worth it to search [huggingface datasets](https://huggingface.co/docs/datasets/index) before creating your own. 
 
 When fine tuning and eventually using the fine-tuned LLM, I re-use this prompt template. I felt the prompt was quite long, and I considered speeding up evaluation by shortening it to a proxy prompt of a short sequence special characters not widely used in the training data, and letting the LLM would learn the meaning during the fine tuning process.  I'm not sure if this would work well, but I think this would make it harder for the LLM to use it's pre-existing knowledge from the training process.  The relatively modest improvement in fine-tuning and inference time didn't seem worth it, so I set aside this idea.
 
 I split the dataset into 80% train, 10% eval, and 10% test splits.
 
 # 2. Create the Fine Tune environment
-This turned out to be harder than expected.  I started from the environment in [this Unsloth notebook](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(270M).ipynb), but I did try to install as many as possible of the requirements as possible from conda-forge.  This turned out to be a pain, not b/c of a limitation with conda or conda-forge, but rather b/c the community seemed to treat conda-forge as (a close) 2nd class citizen (PyPI is first) when packaging.  While I didn't record the exact issues/bugs I hit, there was a recent fix I needed and one of the latest unsloth of unsloth zoo packages was only available on PyPI.  There seems to be a lag of a day or 2 for conda-forge packages for the unslath packages at least.  Additionally, many of the ML libraries were not packaged on conda-forge at all.  Due to the trouble I was having, I resorted to moving nearly everything possible to PyPI, and eventually got a working version.  
+This turned out to be harder than expected. I started from the environment in [this Unsloth notebook](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(270M).ipynb), but I did try to install as many as possible of the requirements as possible from conda-forge.
 
-Somehow in the process of building the environment my uv cached unloth package was corrupted leading to a the python interpreter crashing anytime I imported unsloth, but claude code was surprisingly helpful in tracking down the issue.  Clearing the uv cache fixed the issue.
+This turned out to be a pain, not because of a limitation with conda or conda-forge, but rather because the community seemed to treat conda-forge as a (close) second class citizen when packaging - PyPI gets priority. While I didn't record the exact issues/bugs I hit, there was a recent fix I needed and one of the latest unsloth zoo packages was only available on PyPI. There seems to be a lag of a day or two for conda-forge packages for the unsloth packages at least. Additionally, many of the ML libraries were not packaged on conda-forge at all.
+
+Due to the trouble I was having, I resorted to moving nearly everything possible to PyPI, and eventually got a working version. Somehow in the process of building the environment my uv cached unsloth package was corrupted leading to the python interpreter crashing anytime I imported unsloth, but claude code was surprisingly helpful in tracking down the issue. Clearing the uv cache fixed the issue.
 
 # 3. Calculate Fine Tune Weights
 There were some modifications needed to the Unsloth notebook I started out with, but once getting the notebook to run, the training process only took ~5 minutes for 100 steps and I saw a bump in model performance even from that.  Later I went in and increased training time, and set some early stopping conditions based on the loss improvement on the eval split of the dataset.
@@ -112,28 +114,34 @@ Micro-Avg Precision            20.82% (218/1047)         65.27% (280/429)       
 Micro-Avg Recall               58.92% (218/370)          64.97% (280/431)          +6.05%
 Micro-Avg F1                   30.77%                    65.12%                    +34.35%
 
-Jaccard Similarity is the most stringent of the metrics listed.  It's calculated as the intersection of ground truth and predicted labels divided by the union of ground truth and predicted lablels.  It penalizes both extra and missing labels whereas precision only penalizes predicted labels that are wrong and recall only penalizes not predicting the ground truth labels.  There is a drop in recall in the fine tuned model, but not too suprising given the 7.64 labels per example predicted by the base model compared to only 2.73 for the fine-tuned model.  Overall, the performance of the fine-tuned model is much higher as expected.
+Jaccard Similarity is the most stringent of the metrics listed, and it's particularly relevant for multi-label classification problems like this one. It's calculated as the intersection of ground truth and predicted labels divided by the union of ground truth and predicted labels. Essentially, it measures how much overlap there is between what the model predicted and what it should have predicted, relative to all the labels involved. It penalizes both extra and missing labels, whereas precision only penalizes predicted labels that are wrong and recall only penalizes not predicting the ground truth labels.
+
+The fine tuned model even improved in recall, which was notable given the 7.64 labels per example predicted by the base model compared to only 2.73 for the fine-tuned model. The base model was essentially throwing labels at the wall, while the fine-tuned model learned to be more selective. Overall, the performance of the fine-tuned model is much higher as expected.
 
 Many things could be done to improve model performance further.  I wouldn't expect more data to help with the Gemma 270M model since training stopped due to early stopping criteria.  I would expect better performance by bumping up the model size since there are 1b, 4b, 12b and 27b gemma3 variants.
 
 # 5. Deployment
-For this learning exercise, I've added a github action that is triggered when an issue is opened.  LLM Fill this out a bit more.
+For this learning exercise, I've added a github action that is triggered when an issue is opened. The action downloads the fine-tuned model weights, loads the model, and runs inference on the new issue to predict appropriate labels. It then automatically applies those labels to the issue. The whole process takes about 8 seconds on GitHub's CPU runners - 6 seconds to load the model and 2 seconds for inference. While this works fine for the low volume of issues in the Nebari repo, it's definitely something to consider for higher-traffic repositories where you might want to keep a model running persistently rather than cold-starting it every time.
 
 # Learnings
-### Consider model updates 
+### Planning for model evolution 
 
-Consider what is required if I want to my model to predict a new label among the existing set.  I not only have to retrain the model, but I need to re-generate my training dataset.  Alternatively, I could have trained a model to take accept a variable list of possible labels and choose among them for the output.  I'd expect such a model to require more training data, but would also be more robust to adding new labels and making predictions on various repos rather than just a single repo.
+Consider what is required if I want my model to predict a new label among the existing set.  I not only have to retrain the model, but I need to re-generate my training dataset.  Alternatively, I could have trained a model to take accept a variable list of possible labels and choose among them for the output.  I'd expect such a model to require more training data, but would also be more robust to adding new labels and making predictions on various repos rather than just a single repo.
 
 
-### Consider deployment strategy
+### Deployment challenges 
 I expect the model I've trained to get very limited use as the Nebari repo gets maybe a few issues per week.  It's not worth keeping this running constantly.  As a quick validation strategy, I planned to have the github action triggered when a new issue is created.  The github action would need to pull the model from storage somewhere.  I've saved the LoRa weights and the base model weights separately currently, but even if I combined them the github action will need to pull ~300MB of weights each time it runs, and that's just with the smallest Gemma3 model.  Of course caching could help with these issues.  
 
 Additionally, the public github action runners don't have gpus.  In a quick test, it takes ~6 seconds to load the model and ~2 seconds to make a prediction when running on cpu.  This is fine for this application, but of course the larger models will take longer and it's something to consider.
 
-### Many options exist to increase model performance
-- increase model size
-- change model architecture
-- gather more data
-- use model in combination with RAG (turn 0 shot into few shot)
-- context enhancement (include)
-- many others.
+### Paths to better performance
+
+Looking back at the results, there are tons of ways I could push performance higher if this were a real production use case. The most obvious would be bumping up to a larger model - going from 270M to 1B or even 4B parameters would likely give substantial improvements, though at the cost of inference time and memory usage.
+
+Beyond just model size, there are other approaches worth exploring:
+- **Model architecture changes**: Switch to a different base model family or add specialized classification heads
+- **Data improvements**: Collect more training examples or use higher-quality labeling (human review, multiple model consensus)
+- **Hybrid approaches**: Combine the fine-tuned model with RAG to include examples from similar issues as context
+- **Training techniques**: Experiment with different fine-tuning strategies, learning rates, or multi-task learning
+
+You'd need to weigh the pros and cons of each approach against your specific constraints - whether that's inference latency, memory usage, training time, or data availability. For a low-traffic repo like Nebari, the current 270M model is probably overkill already, but it was a great learning exercise to see what's possible even with such a small model.

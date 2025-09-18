@@ -140,7 +140,10 @@ tokenizer = get_chat_template(
 
 
 from datasets import load_dataset
-dataset = load_dataset("AdamDLewis/nebari-issue-label-dataset", split = "train[:10000]")
+dataset_dict = load_dataset("AdamDLewis/nebari-issue-label-dataset")
+print(f"Dataset sizes - Train: {len(dataset_dict['train'])}, Validation: {len(dataset_dict['validation'])}")
+dataset = dataset_dict["train"]  # Use all training data
+eval_dataset = dataset_dict["validation"]  # Use all validation data
 
 
 # We now use `convert_to_chatml` to try converting datasets to the correct format for finetuning purposes!
@@ -188,17 +191,17 @@ def convert_to_chatml(example):
     if not isinstance(label:=example['labels'], list):
         print(label)
         raise Exception('hi')
+    sorted_labels = sorted(example["labels"])  # Sort labels alphabetically
     return {
         "conversations": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": f"Issue title: {example["title"]}\nIssue body: {example["body"]}"},
-            {"role": "assistant", "content": ', '.join(example["labels"])}
+            {"role": "assistant", "content": ', '.join(sorted_labels)}
         ]
     }
 
-dataset = dataset.map(
-    convert_to_chatml
-)
+dataset = dataset.map(convert_to_chatml)
+eval_dataset = eval_dataset.map(convert_to_chatml)
 
 
 # Let's see how row 100 looks like!
@@ -214,12 +217,20 @@ dataset[100]
 # In[11]:
 
 
+def normalize_labels(label_string):
+    """Normalize label string by sorting labels alphabetically"""
+    if not label_string or not label_string.strip():
+        return ""
+    labels = [l.strip() for l in label_string.split(',') if l.strip()]
+    return ', '.join(sorted(labels))
+
 def formatting_prompts_func(examples):
    convos = examples["conversations"]
    texts = [tokenizer.apply_chat_template(convo, tokenize = False, add_generation_prompt = False).removeprefix('<bos>') for convo in convos]
    return { "text" : texts, }
 
 dataset = dataset.map(formatting_prompts_func, batched = True)
+eval_dataset = eval_dataset.map(formatting_prompts_func, batched = True)
 
 
 # In[14]:
@@ -256,6 +267,7 @@ def tokenize_and_prepare(examples):
     return tokenized
 
 tokenized_dataset = dataset.map(tokenize_and_prepare, batched=True, remove_columns=dataset.column_names)
+tokenized_eval_dataset = eval_dataset.map(tokenize_and_prepare, batched=True, remove_columns=eval_dataset.column_names)
 
 
 # <a name="Train"></a>
@@ -266,29 +278,38 @@ tokenized_dataset = dataset.map(tokenize_and_prepare, batched=True, remove_colum
 
 
 from trl import SFTTrainer
-from transformers import TrainingArguments
+from transformers import TrainingArguments, EarlyStoppingCallback
 
 trainer = SFTTrainer(
     model = model,
     tokenizer = tokenizer,
     train_dataset = tokenized_dataset,
-    eval_dataset = None, # Can set up evaluation!
+    eval_dataset = tokenized_eval_dataset,
     args = TrainingArguments(
-        per_device_train_batch_size = 8,
+        per_device_train_batch_size = 16,  # 8
+        per_device_eval_batch_size = 16,  # 8
         gradient_accumulation_steps = 1, # Use GA to mimic batch size!
         warmup_steps = 5,
         # num_train_epochs = 1, # Set this for 1 full training run.
-        max_steps = 100,
+        # max_steps = 100,
         learning_rate = 5e-5, # Reduce to 2e-5 for long training runs
         logging_steps = 1,
+        eval_steps = 20,  # Evaluate every 20 steps
+        eval_strategy = "steps",
+        save_steps = 100,
+        save_strategy = "steps",
+        load_best_model_at_end = True,
+        metric_for_best_model = "eval_loss",
+        greater_is_better = False,
         optim = "adamw_8bit",
-        weight_decay = 0.01,
+        weight_decay = 0.001,
         lr_scheduler_type = "linear",
         seed = 3407,
         output_dir="outputs",
         report_to = "none", # Use this for WandB etc
         remove_unused_columns=False,
     ),
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.01)],
 )
 
 
@@ -384,6 +405,15 @@ generated_ids = model.generate(
 )
 
 output = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+
+# Extract and normalize the generated labels for comparison
+generated_text = output.split("<start_of_turn>model\n")[-1].strip()
+normalized_prediction = normalize_labels(generated_text)
+expected_labels = normalize_labels(dataset['conversations'][10][2]['content'])
+
+print(f"\nExpected: {expected_labels}")
+print(f"Generated: {normalized_prediction}")
+print(f"Match: {normalized_prediction == expected_labels}")
 
 
 # <a name="Save"></a>
